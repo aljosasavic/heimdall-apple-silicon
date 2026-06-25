@@ -631,6 +631,12 @@ bool BridgeManager::SendBulkTransfer(unsigned char *data, int length, int timeou
 			if (verbose)
 				Interface::PrintErrorSameLine(" Retrying...\n");
 
+			// If the endpoint stalled (common on macOS during large transfers like
+			// SUPER), the pipe stays halted until cleared - every retry would hit the
+			// same stall. Clear the halt before re-sending the packet.
+			if (result == LIBUSB_ERROR_PIPE)
+				libusb_clear_halt(deviceHandle, outEndpoint);
+
 			// Wait longer each retry
 			Sleep(retryDelay * (i + 1));
 
@@ -675,6 +681,10 @@ int BridgeManager::ReceiveBulkTransfer(unsigned char *data, int length, int time
 		{
 			if (verbose)
 				Interface::PrintErrorSameLine(" Retrying...\n");
+
+			// Clear a stalled IN pipe before retrying (see SendBulkTransfer).
+			if (result == LIBUSB_ERROR_PIPE)
+				libusb_clear_halt(deviceHandle, inEndpoint);
 
 			// Wait longer each retry
 			Sleep(retryDelay * (i + 1));
