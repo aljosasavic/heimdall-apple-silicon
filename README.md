@@ -1,62 +1,157 @@
-# Heimdall
+# Heimdall for Apple Silicon
 
-[![builds.sr.ht status](https://builds.sr.ht/~grimler/Heimdall/commits/ubuntu.yml.svg)](https://builds.sr.ht/~grimler/Heimdall/commits/ubuntu.yml?)
-[![builds.sr.ht status](https://builds.sr.ht/~grimler/Heimdall/commits/archlinux.yml.svg)](https://builds.sr.ht/~grimler/Heimdall/commits/archlinux.yml?)
-[![builds.sr.ht status](https://builds.sr.ht/~grimler/Heimdall/commits/alpine.yml.svg)](https://builds.sr.ht/~grimler/Heimdall/commits/alpine.yml?)
+**Flash Samsung Galaxy stock firmware natively from an Apple Silicon Mac (M1/M2/M3/M4) — no Windows, no Linux, no virtual machine.**
 
-Heimdall is a cross-platform open-source tool suite used to flash
-firmware (aka ROMs) onto Samsung mobile devices.
+This is a fork of [grimler's Heimdall](https://git.sr.ht/~grimler/Heimdall) (v2.2.2) with a
+small but crucial fix that makes a **full firmware flash — including the multi-gigabyte
+`SUPER` partition — complete reliably on macOS**, where upstream Heimdall aborts partway.
 
-## Supported Platforms
+> ✅ **Verified end-to-end:** a soft-bricked **Galaxy S22 (SM-S901B)** with `set_policy_failed`
+> was fully restored from a **MacBook with an M4** running macOS 26 — entirely natively.
 
-Heimdall should work on most Linux systems, and perhaps even on OSX
-and Windows, though the latter two are not tested by the current
-maintainer.
+---
 
-## How does Heimdall work?
+## TL;DR
 
-Heimdall connects to a mobile device over USB and interacts with
-low-level software running on the device, known as Loke. Loke and
-Heimdall communicate via the custom Samsung-developed protocol
-typically referred to as the 'Odin 3 protocol'.
+```bash
+# 1. Build (Apple Silicon)
+brew install cmake libusb pkgconf lz4
+./build.sh                      # produces build/bin/heimdall, installs to /opt/homebrew/bin
 
-USB communication in Heimdall is handled by the popular open-source
-USB library, [libusb](https://libusb.info).
-
-## Free & Open Source
-
-Heimdall is both free and open source. It is licensed under the MIT
-license (see LICENSE).
-
-Heimdall has been developed through countless hours of reverse
-engineering work, predominantly by [Glass
-Echidna](https://glassechidna.com.au/), a _tiny_ independent software
-development company.
-
-## Documentation
-
-To compile Heimdall and Heimdall-frontend (the gui application), run
-something like:
-
-```sh
-mkdir build
-cd build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make
+# 2. Put the phone in Download mode, then flash a firmware folder
+sudo ./flash-firmware.sh ~/path/to/firmware-folder
 ```
 
-To only compile the CLI tool, add the option -DDISABLE_FRONTEND=true
-to the cmake command.
+The firmware folder is just the unzipped `BL_*.tar.md5 / AP_*.tar.md5 / CP_*.tar.md5 /
+CSC_*.tar.md5` from a stock firmware download.
 
-The name of dependencies vary between distributions. On alpinelinux
-you need to install: `make cmake gcc g++ libc-dev qt6-qtbase-dev and
-libusb-dev`, on archlinux: `cmake libusb qt6-base` and on ubuntu: `cmake
-g++ pkg-config libusb-1.0.0-dev qt6-base-dev and zlib1g-dev`.
+---
 
-Some more documentation, and instructions on how to use Heimdall and
-Heimdall-frontend, can be found in the doc/ folder.
+## The problem this fixes
 
-### Odin protocol and PIT format
+On Apple Silicon macOS, stock Heimdall detects the phone, handshakes, and flashes the
+*small* partitions fine — then **dies on the first large bulk transfer** (typically `SUPER`,
+~9 GB):
 
-For more details on the Odin protocol, and the PIT files, see the
-external project [samsung-loki/samsung-docs](https://samsung-loki.github.io/samsung-docs/).
+```
+Uploading SUPER
+5%  libusb: error [submit_bulk_transfer] bulk transfer failed (dir = Out): pipe is stalled (code = 0xe000404f)
+...repeats...
+ERROR: Failed to send file part packet!
+ERROR: SUPER upload failed!
+```
+
+macOS halts (`kIOUSBPipeStalled`) the bulk OUT endpoint partway through a long transfer.
+Upstream Heimdall's retry loop re-issued the same transfer **without clearing the halted
+pipe**, so every retry hit the identical stall and the whole flash aborted.
+
+## The fix
+
+When a bulk transfer fails with `LIBUSB_ERROR_PIPE`, call `libusb_clear_halt()` on the
+endpoint **before** retrying. The pipe un-stalls and the transfer continues. Applied to both
+`SendBulkTransfer` and `ReceiveBulkTransfer` in `heimdall/source/BridgeManager.cpp`.
+
+Ten lines — the full diff is in [`PATCH.diff`](PATCH.diff):
+
+```c
+// If the endpoint stalled (common on macOS during large transfers like
+// SUPER), the pipe stays halted until cleared - every retry would hit the
+// same stall. Clear the halt before re-sending the packet.
+if (result == LIBUSB_ERROR_PIPE)
+    libusb_clear_halt(deviceHandle, outEndpoint);
+```
+
+---
+
+## Full guide
+
+### 1. Build
+
+```bash
+brew install cmake libusb pkgconf lz4
+./build.sh
+```
+
+`build.sh` runs cmake with `-DDISABLE_FRONTEND=ON` (CLI only — no Qt needed) and copies the
+binary to `/opt/homebrew/bin/heimdall`. A prebuilt arm64 binary may also be attached to the
+GitHub Releases of this repo.
+
+### 2. Get the firmware
+
+Download the stock firmware for your **exact model and region** (e.g. from samfw.com or
+samfrew.com). Unzip it — you'll get four files:
+
+```
+BL_<model>_..._.tar.md5     # bootloader
+AP_<model>_..._.tar.md5     # system (large; contains super.img.lz4, boot, etc.)
+CP_<model>_..._.tar.md5     # modem
+CSC_<region>_..._.tar.md5   # region / carrier (this also contains the .pit)
+```
+
+Put all four in one folder. **Samsung firmware is cryptographically signed** — the phone
+rejects anything not signed by Samsung, so a mirror cannot tamper with what actually flashes.
+
+> `CSC_*` performs a factory wipe. To keep user data, use the `HOME_CSC_*` file instead.
+
+### 3. Enter Download mode
+
+Power off the phone, then hold **Volume Down + Volume Up** together and plug in the USB
+cable. Press **Volume Up** to confirm at the warning screen.
+
+### 4. Flash
+
+```bash
+sudo ./flash-firmware.sh ~/path/to/firmware-folder
+```
+
+`sudo` is required so libusb can claim the USB interface on macOS. The script:
+
+1. extracts the tarballs and `lz4`-decompresses every partition image,
+2. reads the partition→file mapping straight out of the firmware's own `.pit` (offline, via
+   `heimdall print-pit --file`),
+3. issues a single `heimdall flash --<PARTITION> <file> ...` for the whole set,
+4. the phone reboots into a clean system when done.
+
+**First boot after a full flash + wipe takes several minutes** — let it sit.
+
+### Dry run (verify USB before writing anything)
+
+```bash
+sudo ./flash-firmware.sh ~/path/to/firmware-folder test
+```
+
+This only reads the PIT off the device — if it prints the partition table, your USB path
+works and a real flash will succeed.
+
+---
+
+## How it works
+
+Heimdall talks to the bootloader-level **Loke** software over USB using Samsung's "Odin 3"
+protocol, with [libusb](https://libusb.info) doing the transfers. The only thing standing
+between macOS and a successful flash was unrecovered endpoint stalls on large transfers —
+see [the fix](#the-fix) above.
+
+## Troubleshooting
+
+- **`ERROR: Claiming interface failed!`** — another process holds the device (e.g. a VM with
+  USB passthrough still running), or you're not `root`. Run with `sudo` and make sure nothing
+  else has grabbed the phone.
+- **`pipe is stalled` and it still aborts** — make sure you're running *this* build, not a
+  Homebrew/old Heimdall (`which heimdall` should be `/opt/homebrew/bin/heimdall`).
+- **Stuck on boot logo > 15 min** — re-enter Download mode and re-flash; a fresh USB state
+  often helps.
+
+## Credits & license
+
+- Original Heimdall: **Benjamin Dobell**, [Glass Echidna](https://glassechidna.com.au/).
+- Maintained fork (v2.2.2 base): **Henrik Grimler** — <https://git.sr.ht/~grimler/Heimdall>.
+- Apple-Silicon large-transfer stall fix: this fork.
+
+Licensed under the **MIT License** (see [`LICENSE`](LICENSE)), same as upstream. Upstream's
+original README is preserved at [`docs/README-upstream.md`](docs/README-upstream.md).
+
+## Disclaimer
+
+Flashing firmware can wipe your data and, if interrupted, can brick a device. Use the correct
+firmware for your exact model, don't disconnect mid-flash, and proceed at your own risk.
