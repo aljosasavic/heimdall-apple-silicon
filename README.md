@@ -65,6 +65,24 @@ if (result == LIBUSB_ERROR_PIPE)
     libusb_clear_halt(deviceHandle, outEndpoint);
 ```
 
+## Prior art & what's new
+
+Clearing a halted USB endpoint with `CLEAR_FEATURE(ENDPOINT_HALT)` (libusb's
+`libusb_clear_halt`) before retrying a failed bulk transfer is a **standard, long-established
+USB error-recovery pattern** — there is nothing novel about the technique itself.
+
+Heimdall has also been built for Apple Silicon before (e.g.
+[fathonix/heimdall-osx-arm64](https://github.com/fathonix/heimdall-osx-arm64)), so simply
+*running* it on an M-series Mac is not new either.
+
+What appears to be new is **applying that well-known pattern inside Heimdall's transfer retry
+path so that large partitions actually finish on Apple Silicon.** Existing arm64 macOS builds
+still abort on the first multi-gigabyte partition (`SUPER`) with `kIOUSBPipeStalled`, because
+the retry re-issues the transfer without clearing the stall. A search of Heimdall's issues,
+pull requests and known forks (Benjamin-Dobell, grimler, and the arm64 build forks) turned up
+no equivalent stall-recovery fix as of June 2026. If you know of prior work that does this,
+please open an issue — credit where it's due.
+
 ---
 
 ## Full guide
