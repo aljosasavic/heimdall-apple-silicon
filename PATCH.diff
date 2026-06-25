@@ -1,5 +1,5 @@
-From 389edcad9b8efe2dfb0848958d8b567c03fe01b2 Mon Sep 17 00:00:00 2001
-From: "jack.bernand" <jack.bernand@proton.me>
+From 32dbc7114361b741c8df578ae9c5ecaa4fc3b77c Mon Sep 17 00:00:00 2001
+From: Aljosa Savic <aljosasavic@yahoo.com>
 Date: Thu, 25 Jun 2026 15:46:41 +0200
 Subject: [PATCH] Clear stalled USB pipe on retry (fixes large-partition
  flashing on Apple Silicon macOS)
