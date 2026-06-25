@@ -1,4 +1,3 @@
 build/
 *.o
 .DS_Store
-prebuilt/
