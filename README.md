@@ -1,6 +1,6 @@
 # Heimdall for Apple Silicon
 
-**Flash Samsung Galaxy stock firmware natively from an Apple Silicon Mac (M1/M2/M3/M4) — no Windows, no Linux, no virtual machine.**
+**Flash Samsung Galaxy stock firmware natively from an Apple Silicon Mac (M1/M2/M3/M4/M5) — no Windows, no Linux, no virtual machine.**
 
 This is a fork of [grimler's Heimdall](https://git.sr.ht/~grimler/Heimdall) (v2.2.2) with a
 small but crucial fix that makes a **full firmware flash — including the multi-gigabyte
@@ -8,6 +8,10 @@ small but crucial fix that makes a **full firmware flash — including the multi
 
 > ✅ **Verified end-to-end:** a soft-bricked **Galaxy S22 (SM-S901B)** with `set_policy_failed`
 > was fully restored from a **MacBook with an M4** running macOS 26 — entirely natively.
+>
+> The fix lives at the macOS USB layer (not anything chip-specific), and the binary is a
+> universal `arm64` build, so it applies to **every Apple Silicon Mac — M1 through M5** and
+> beyond. M4 is what was tested hands-on; M1–M3 and M5 use the exact same code path.
 
 ---
 
