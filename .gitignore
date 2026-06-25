@@ -1,5 +1,4 @@
+build/
+*.o
 .DS_Store
-._*
-.idea/
-/build/
-*~
+prebuilt/

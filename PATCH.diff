@@ -1,0 +1,50 @@
+From 389edcad9b8efe2dfb0848958d8b567c03fe01b2 Mon Sep 17 00:00:00 2001
+From: "jack.bernand" <jack.bernand@proton.me>
+Date: Thu, 25 Jun 2026 15:46:41 +0200
+Subject: [PATCH] Clear stalled USB pipe on retry (fixes large-partition
+ flashing on Apple Silicon macOS)
+
+On macOS (Apple Silicon), large bulk OUT transfers such as the SUPER
+partition stall mid-transfer with kIOUSBPipeStalled. The retry loops in
+Send/ReceiveBulkTransfer re-issued the transfer without clearing the
+halted pipe, so every retry hit the same stall and the flash aborted.
+Call libusb_clear_halt on the endpoint before retrying when the error is
+LIBUSB_ERROR_PIPE. With this, a full stock firmware flash of a Galaxy S22
+(SM-S901B) completes natively from an M4 Mac.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+---
+ heimdall/source/BridgeManager.cpp | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/heimdall/source/BridgeManager.cpp b/heimdall/source/BridgeManager.cpp
+index 7337aab..c9ca23c 100644
+--- a/heimdall/source/BridgeManager.cpp
++++ b/heimdall/source/BridgeManager.cpp
+@@ -631,6 +631,12 @@ bool BridgeManager::SendBulkTransfer(unsigned char *data, int length, int timeou
+ 			if (verbose)
+ 				Interface::PrintErrorSameLine(" Retrying...\n");
+ 
++			// If the endpoint stalled (common on macOS during large transfers like
++			// SUPER), the pipe stays halted until cleared - every retry would hit the
++			// same stall. Clear the halt before re-sending the packet.
++			if (result == LIBUSB_ERROR_PIPE)
++				libusb_clear_halt(deviceHandle, outEndpoint);
++
+ 			// Wait longer each retry
+ 			Sleep(retryDelay * (i + 1));
+ 
+@@ -676,6 +682,10 @@ int BridgeManager::ReceiveBulkTransfer(unsigned char *data, int length, int time
+ 			if (verbose)
+ 				Interface::PrintErrorSameLine(" Retrying...\n");
+ 
++			// Clear a stalled IN pipe before retrying (see SendBulkTransfer).
++			if (result == LIBUSB_ERROR_PIPE)
++				libusb_clear_halt(deviceHandle, inEndpoint);
++
+ 			// Wait longer each retry
+ 			Sleep(retryDelay * (i + 1));
+ 
+-- 
+2.52.0
+
