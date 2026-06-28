@@ -1,4 +1,4 @@
-From 32dbc7114361b741c8df578ae9c5ecaa4fc3b77c Mon Sep 17 00:00:00 2001
+From 61eab4063db9feb0021a1e9c68056f76cfd1c468 Mon Sep 17 00:00:00 2001
 From: Aljosa Savic <aljosasavic@yahoo.com>
 Date: Thu, 25 Jun 2026 15:46:41 +0200
 Subject: [PATCH] Clear stalled USB pipe on retry (fixes large-partition
@@ -11,8 +11,6 @@ halted pipe, so every retry hit the same stall and the flash aborted.
 Call libusb_clear_halt on the endpoint before retrying when the error is
 LIBUSB_ERROR_PIPE. With this, a full stock firmware flash of a Galaxy S22
 (SM-S901B) completes natively from an M4 Mac.
-
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 ---
  heimdall/source/BridgeManager.cpp | 10 ++++++++++
  1 file changed, 10 insertions(+)
